@@ -1,8 +1,6 @@
 "use client";
 
-import { COLOR_STRATEGY } from "@/lib/config";
-import { StrategyBPalette } from "./strategy-b-palette";
-import { StrategyCPalette } from "./strategy-c-palette";
+import { ColorComparison } from "./color-comparison";
 import type { ColorPalette } from "@/lib/types";
 
 interface ColorPaletteDisplayProps {
@@ -12,19 +10,16 @@ interface ColorPaletteDisplayProps {
 
 /**
  * Color Palette Display Component
- * Routes to the appropriate strategy based on the feature flag
  * 
- * Change COLOR_STRATEGY in lib/config.ts to test different strategies:
- * - "B": Single button cycles through all (dark → light)
- * - "C": Auto-detect mode with toggle override
+ * Uses the M3 Two-Color Comparison approach:
+ * - Harmonized: M3's Blend.harmonize() for cohesive feel
+ * - Contrast Validated: WCAG AA 4.5:1 compliance check
+ * 
+ * Both approaches use the two most frequent colors from workspace images.
  */
 export function ColorPaletteDisplay({
   palette,
   onColorChange,
 }: ColorPaletteDisplayProps) {
-  if (COLOR_STRATEGY === "B") {
-    return <StrategyBPalette palette={palette} onColorChange={onColorChange} />;
-  }
-  
-  return <StrategyCPalette palette={palette} onColorChange={onColorChange} />;
+  return <ColorComparison palette={palette} onColorChange={onColorChange} />;
 }

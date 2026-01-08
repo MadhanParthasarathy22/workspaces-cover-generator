@@ -1,14 +1,9 @@
 /**
- * Feature flags and configuration for testing different strategies
+ * Configuration for the Workspaces Cover Generator
  * 
- * Change COLOR_STRATEGY to test different approaches:
- * - "B": Single smart button cycles through all (dark → light)
- * - "C": Auto-detect mode with toggle override
+ * Color system now uses the M3 Two-Color Comparison approach:
+ * - Harmonized: M3's Blend.harmonize() for cohesive feel
+ * - Contrast Validated: WCAG AA 4.5:1 compliance check
  */
 
-// Strategy selection - change this to test different strategies
-export const COLOR_STRATEGY: "B" | "C" = "B";
-
-// Alternative: use environment variable for easier switching without code changes
-// export const COLOR_STRATEGY = (process.env.NEXT_PUBLIC_COLOR_STRATEGY || "C") as "B" | "C";
-
+// Add any future configuration options here

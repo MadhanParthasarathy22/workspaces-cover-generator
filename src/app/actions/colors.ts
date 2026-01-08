@@ -1,13 +1,9 @@
 "use server";
 
-import type { ColorResult, ColorPalette, Swatch, ColorGroup } from "@/lib/types";
+import type { ColorResult, ColorPalette, Swatch } from "@/lib/types";
 import {
   groupColorsByFrequency,
   detectWorkspaceMode,
-  generateDarkModePairs,
-  generateLightModePairs,
-  getLightness,
-  getColorCategory,
 } from "@/lib/color-utils";
 
 /**
@@ -80,16 +76,9 @@ export async function extractColors(imageUrls: string | string[]): Promise<Color
     // Detect workspace mode (light or dark)
     const detectedMode = detectWorkspaceMode(colorGroups);
     
-    // Generate color pairs based on detected mode
-    const pairs = detectedMode === "dark" 
-      ? generateDarkModePairs(colorGroups)
-      : generateLightModePairs(colorGroups);
-    
-    // Pick the first pair as default
-    const defaultPair = pairs[0] || {
-      background: colorGroups[0]?.representative || "#1a1a1a",
-      accent: colorGroups[1]?.representative || "#d45a00",
-    };
+    // Use the two most frequent colors as defaults
+    const defaultBackground = colorGroups[0]?.representative || "#1a1a1a";
+    const defaultAccent = colorGroups[1]?.representative || "#d45a00";
     
     // Convert color groups to legacy swatches for backward compatibility
     const allSwatches: Swatch[] = colorGroups.slice(0, 6).map((group, index) => ({
@@ -99,8 +88,8 @@ export async function extractColors(imageUrls: string | string[]): Promise<Color
     }));
 
     const colorPalette: ColorPalette = {
-      background: defaultPair.background,
-      accent: defaultPair.accent,
+      background: defaultBackground,
+      accent: defaultAccent,
       allSwatches,
       colorGroups,
       detectedMode,

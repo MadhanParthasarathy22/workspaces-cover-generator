@@ -111,19 +111,24 @@ export default function Home() {
           </div>
         )}
 
-        {/* Results Grid */}
+        {/* Results */}
         {workspaceData && !isLoading && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Content - 2 columns */}
-            <div className="lg:col-span-2">
-              <WorkspaceDisplay data={workspaceData} />
-            </div>
+          <div className="space-y-8">
+            {/* Workspace Data */}
+            <WorkspaceDisplay data={workspaceData} />
 
-            {/* Sidebar - Color Palette */}
+            {/* Color Comparison Section */}
             <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-white">
+                Color Palette Comparison
+              </h2>
+              <p className="text-sm text-zinc-500">
+                Compare two color selection approaches. Regenerate to cycle through different pairs.
+              </p>
+              
               {isExtractingColors ? (
                 <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
-                  <div className="flex items-center gap-3 text-zinc-400">
+                  <div className="flex items-center justify-center gap-3 text-zinc-400">
                     <svg
                       className="animate-spin h-5 w-5"
                       xmlns="http://www.w3.org/2000/svg"
@@ -144,7 +149,7 @@ export default function Home() {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       />
                     </svg>
-                    <span>Extracting colors...</span>
+                    <span>Extracting colors from workspace images...</span>
                   </div>
                 </div>
               ) : colorPalette ? (
@@ -163,16 +168,28 @@ export default function Home() {
               {/* Selected Colors Preview */}
               {selectedColors && (
                 <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-                  <p className="text-xs text-zinc-500 mb-2">Selected Colors</p>
+                  <p className="text-xs text-zinc-500 mb-2">Currently Active Colors</p>
                   <div className="flex gap-2">
-                    <div
-                      className="flex-1 h-12 rounded"
-                      style={{ backgroundColor: selectedColors.background }}
-                    />
-                    <div
-                      className="flex-1 h-12 rounded"
-                      style={{ backgroundColor: selectedColors.accent }}
-                    />
+                    <div className="flex-1 flex items-center gap-2">
+                      <div
+                        className="w-12 h-12 rounded border border-zinc-700"
+                        style={{ backgroundColor: selectedColors.background }}
+                      />
+                      <div className="text-xs">
+                        <p className="text-zinc-500">Background</p>
+                        <code className="text-zinc-400 uppercase">{selectedColors.background}</code>
+                      </div>
+                    </div>
+                    <div className="flex-1 flex items-center gap-2">
+                      <div
+                        className="w-12 h-12 rounded border border-zinc-700"
+                        style={{ backgroundColor: selectedColors.accent }}
+                      />
+                      <div className="text-xs">
+                        <p className="text-zinc-500">Accent</p>
+                        <code className="text-zinc-400 uppercase">{selectedColors.accent}</code>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
