@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { useSidebar } from "@/contexts/sidebar-context";
 
 interface SidebarClientProps {
-  navigation: Array<{ name: string; href: string }>;
+  navigation: ReadonlyArray<{ name: string; href: string }>;
 }
 
 export function SidebarClient({ navigation }: SidebarClientProps) {
