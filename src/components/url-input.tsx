@@ -26,26 +26,35 @@ export function UrlInput({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-3 w-full max-w-2xl">
-      <Input
-        ref={inputRef}
-        type="url"
-        placeholder={placeholder}
-        className="flex-1 h-12 text-base bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500 focus-visible:ring-amber-500"
-        disabled={isLoading}
-      />
+    <form onSubmit={handleSubmit} className="flex gap-3 w-full max-w-3xl">
+      <div className="flex-1">
+        <label htmlFor="workspace-url" className="sr-only">
+          Workspace URL
+        </label>
+        <Input
+          id="workspace-url"
+          ref={inputRef}
+          type="url"
+          placeholder={placeholder}
+          className="w-full h-14 text-base bg-zinc-900/50 backdrop-blur-sm border-zinc-700/50 text-white placeholder:text-zinc-500 focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:border-amber-500/50 transition-all shadow-lg"
+          disabled={isLoading}
+          aria-label="Workspace URL"
+        />
+      </div>
       <Button
         type="submit"
         disabled={isLoading}
-        className="h-12 px-6 bg-amber-600 hover:bg-amber-500 text-white font-medium"
+        className="h-14 px-8 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-semibold shadow-lg shadow-amber-950/30 hover:shadow-xl hover:shadow-amber-950/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        aria-label={isLoading ? "Scraping workspace data" : "Scrape workspace"}
       >
         {isLoading ? (
           <span className="flex items-center gap-2">
             <svg
-              className="animate-spin h-4 w-4"
+              className="animate-spin h-5 w-5"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <circle
                 className="opacity-25"

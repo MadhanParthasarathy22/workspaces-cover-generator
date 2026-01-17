@@ -1,5 +1,80 @@
 import * as cheerio from "cheerio";
 import type { WorkspaceData } from "./types";
+import { findCityInText } from "./city-map";
+
+/**
+ * Helper function to check if text length is valid for gear items
+ * Allows shorter names for known gear terms like "Mac", "PC", "iPad"
+ */
+function isValidGearItemLength(text: string): boolean {
+  const shortGearTerms = ["mac", "pc", "ipad", "iphone", "mbp", "imac"];
+  const textLower = text.toLowerCase().trim();
+  
+  // Check if it's a known short gear term
+  const isShortGear = shortGearTerms.some(term => textLower === term || textLower.startsWith(term + " "));
+  
+  // Allow 2+ chars for short gear terms, 3+ for others
+  const minLength = isShortGear ? 2 : 3;
+  return text.length >= minLength && text.length < 200;
+}
+
+/**
+ * Context-aware detection for gear items
+ * Checks if text looks like a gear/workspace item based on patterns
+ */
+function isLikelyGearItem(text: string): boolean {
+  const textLower = text.toLowerCase().trim();
+  
+  // Filter out common false positives
+  const excludePatterns = [
+    "→", "subscribe", "newsletter", "submit", "gift guide", 
+    "past editions", "twitter", "instagram", "linkedin", "threads"
+  ];
+  
+  if (excludePatterns.some(pattern => textLower.includes(pattern))) {
+    return false;
+  }
+  
+  // Filter out social handles (pattern: Name (@handle) or @handle)
+  if (text.includes("@") && /@\w+/.test(text)) {
+    return false;
+  }
+  
+  // Gear keywords
+  const gearKeywords = [
+    // Hardware
+    "desk", "chair", "monitor", "keyboard", "mouse", "mac", "macbook", "laptop", "display", 
+    "light", "lamp", "camera", "microphone", "headphone", "speaker", "stand", "mount",
+    "hub", "dock", "cable", "webcam", "ipad", "tablet", "phone", "imac", "pc",
+    // Furniture & accessories
+    "shelf", "shelving", "bench", "table", "drawer", "cabinet", "plant", "poster",
+    "rug", "mat", "coaster", "organizer", "holder",
+    // Brands commonly mentioned
+    "herman miller", "apple", "lg", "dell", "asus", "logitech", "sony", "bose",
+    "ikea", "autonomous", "secretlab", "steelcase", "uplift", "jarvis",
+    // Generic workspace terms
+    "pro", "studio", "ultra", "mini", "air"
+  ];
+  
+  // Software/app keywords
+  const softwareKeywords = [
+    "notion", "figma", "slack", "discord", "zoom", "teams", "vscode", "code",
+    "chrome", "safari", "firefox", "arc", "spotify", "terminal", "iterm",
+    "obsidian", "roam", "craft", "bear", "things", "todoist", "linear",
+    "github", "gitlab", "vercel", "netlify", "aws", "docker", "postman"
+  ];
+  
+  // Check for gear keywords
+  const isGear = gearKeywords.some(keyword => textLower.includes(keyword));
+  const isSoftware = softwareKeywords.some(keyword => textLower.includes(keyword));
+  
+  // Check for brand/product patterns (numbers, Pro, Air, etc.)
+  const hasProductPattern = /(pro|air|studio|ultra|mini|max|plus)\b/i.test(text) || 
+                           /\d{3,4}/.test(text) || // Model numbers
+                           /^[A-Z][a-z]+ [A-Z]/.test(text); // Brand Model format
+  
+  return isGear || isSoftware || hasProductPattern;
+}
 
 /**
  * Scrapes workspace data from a Workspaces.xyz profile URL
@@ -26,6 +101,10 @@ export async function scrapeWorkspacesPage(
 
   const html = await response.text();
   const $ = cheerio.load(html);
+
+  // #region agent log - Hypothesis D: Log HTML length to check if content is present
+  console.log('[DEBUG-D] HTML fetched:', { htmlLength: html.length, hasWorkspaceItems: html.toLowerCase().includes('workspace items'), bodyTextLength: $('body').text().length });
+  // #endregion
 
   // Extract name from h1
   const name = $("h1").first().text().trim();
@@ -120,88 +199,321 @@ export async function scrapeWorkspacesPage(
 
   const bio = bioElements.slice(0, 3).join("\n\n"); // Take first 3 substantial paragraphs
 
-  // Extract location if present
-  // Location is often in a specific format or near certain keywords
+  // Extract location from title and first 2 paragraphs
+  // Location information typically appears in the title/subtitle or early in the profile
+  const firstTwoParagraphs = bioElements.slice(0, 2).join("\n\n");
+  const searchText = `${title} ${firstTwoParagraphs}`;
   let location: string | undefined;
   
-  // Check for location patterns in the page
-  const pageText = $("body").text();
-  
-  // Pattern: "based in [Location]" or "from [Location]" or "living in [Location]"
-  const locationPatterns = [
-    /based in ([^.,\n]+)/i,
-    /from ([A-Z][^.,\n]+)/,
-    /living in ([^.,\n]+)/i,
-    /located in ([^.,\n]+)/i,
-  ];
-  
-  for (const pattern of locationPatterns) {
-    const match = pageText.match(pattern);
-    if (match) {
-      location = match[1].trim();
-      // Clean up - remove trailing punctuation and limit length
-      location = location.replace(/[.!?]+$/, "").trim();
-      if (location.length > 50) location = undefined; // Too long, probably not a location
-      break;
-    }
+  // Check for city names in the title and first 2 paragraphs
+  const foundCity = findCityInText(searchText);
+  if (foundCity) {
+    location = foundCity;
+  } else {
+    // Fallback: if no location found, use "Earth, Milky Way"
+    location = "Earth, Milky Way";
   }
 
   // Extract workspace items - look for lists after "Workspace Items" heading
   const workspaceItems: string[] = [];
   
-  // Find the "Workspace Items" section
-  $("h2, h3").each((_, heading) => {
+  // #region agent log - Hypothesis A: Log all h2/h3/h4 headings found
+  const allHeadings: string[] = [];
+  $("h2, h3, h4").each((_, heading) => {
+    allHeadings.push($(heading).text().trim());
+  });
+  console.log('[DEBUG-A] All headings found:', { headings: allHeadings, count: allHeadings.length });
+  // #endregion
+  
+  // #region agent log - Hypothesis B/E: Log all list items and links in page
+  const allListItems: string[] = [];
+  $("li").each((_, li) => { allListItems.push($(li).text().trim().substring(0, 100)); });
+  const allLinks: string[] = [];
+  $("a").each((_, a) => { 
+    const text = $(a).text().trim();
+    const href = $(a).attr('href') || '';
+    if (text.length > 5 && text.length < 100 && !href.includes('twitter') && !href.includes('instagram')) {
+      allLinks.push(text);
+    }
+  });
+  console.log('[DEBUG-B] Page content:', { listItemCount: allListItems.length, linkCount: allLinks.length, sampleListItems: allListItems.slice(0, 15), sampleLinks: allLinks.slice(0, 20) });
+  // #endregion
+  
+  // Expanded heading patterns to match more workspace-related sections
+  const headingPatterns = [
+    "workspace items", "gear", "setup", "office", 
+    "tool stack", "software", "tools", "equipment",
+    "what is in your", "what's in your", "desk setup",
+    // Personal heading variations
+    "my setup", "my gear", "my workspace", "what i use", "what i'm using",
+    // Section variations
+    "tech stack", "hardware", "software stack", "peripherals", "devices",
+    // Additional patterns
+    "stack", "tools i use", "favorite tools", "current setup"
+  ];
+  
+  // Find the "Workspace Items" section - using improved traversal
+  $("h2, h3, h4").each((_, heading) => {
     const headingText = $(heading).text().toLowerCase();
-    if (headingText.includes("workspace items") || headingText.includes("gear") || headingText.includes("setup")) {
-      // Get the list items following this heading
-      let next = $(heading).next();
-      while (next.length && !next.is("h2, h3")) {
+    // #region agent log - Hypothesis A: Check heading match
+    const matchesPattern = headingPatterns.some(p => headingText.includes(p));
+    console.log('[DEBUG-A2] Heading check:', { headingText, matchesPattern });
+    // #endregion
+    
+    if (matchesPattern) {
+      // #region agent log - Hypothesis C: Log matched heading and start traversal
+      console.log('[DEBUG-C] Matched heading - starting traversal:', { headingText });
+      // #endregion
+      
+      const $heading = $(heading);
+      
+      // Strategy 1: Recursive parent search up to 4 levels
+      let $current = $heading;
+      let level = 0;
+      const maxLevels = 4;
+      let foundInParents = false;
+      
+      while (level < maxLevels && $current.length) {
+        const $parent = $current.parent();
+        if (!$parent.length || $parent.is('body') || $parent.is('html')) break;
+        
+        // Search for lists in this parent level
+        $parent.find("ul, ol").each((_, list) => {
+          $(list).find("li").each((_, li) => {
+            const itemText = $(li).text().trim();
+            if (itemText && isValidGearItemLength(itemText) && isLikelyGearItem(itemText) && !workspaceItems.includes(itemText)) {
+              workspaceItems.push(itemText);
+              foundInParents = true;
+            }
+          });
+        });
+        
+        // Also check for bullet points in paragraphs/divs at this level
+        $parent.find("p, div").each((_, el) => {
+          const text = $(el).text().trim();
+          // Check for single bullet items
+          if (text && (text.startsWith("•") || text.startsWith("*") || text.startsWith("-") || text.startsWith("◦"))) {
+            const item = text.replace(/^[*•\-◦]\s*/, "").trim();
+            if (item && isValidGearItemLength(item) && isLikelyGearItem(item) && !workspaceItems.includes(item)) {
+              workspaceItems.push(item);
+              foundInParents = true;
+            }
+          }
+          // Check for multi-line bullet lists
+          const lines = text.split(/\n/);
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine && (trimmedLine.startsWith("•") || trimmedLine.startsWith("*") || trimmedLine.startsWith("-") || trimmedLine.startsWith("◦"))) {
+              const item = trimmedLine.replace(/^[*•\-◦]\s*/, "").trim();
+              if (item && isValidGearItemLength(item) && isLikelyGearItem(item) && !workspaceItems.includes(item)) {
+                workspaceItems.push(item);
+                foundInParents = true;
+              }
+            }
+          }
+        });
+        
+        $current = $parent;
+        level++;
+      }
+      
+      // Also search in common content containers
+      const contentSelectors = [".content", "article", "main", "[class*='post']", "[class*='content']"];
+      for (const selector of contentSelectors) {
+        const $container = $heading.closest(selector);
+        if ($container.length) {
+          $container.find("ul, ol").each((_, list) => {
+            $(list).find("li").each((_, li) => {
+              const itemText = $(li).text().trim();
+              if (itemText && isValidGearItemLength(itemText) && isLikelyGearItem(itemText) && !workspaceItems.includes(itemText)) {
+                workspaceItems.push(itemText);
+                foundInParents = true;
+              }
+            });
+          });
+        }
+      }
+      
+      // #region agent log - Parent search result
+      console.log('[DEBUG-C-PARENT] Recursive parent container search:', { foundInParents, itemsNow: workspaceItems.length, levelsSearched: level });
+      // #endregion
+      
+      // Strategy 2: Also try sibling traversal (original approach)
+      let next = $heading.next();
+      let siblingCount = 0;
+      while (next.length && !next.is("h2, h3, h4")) {
+        siblingCount++;
+        const tagName = next.prop('tagName');
+        const isUlOl = next.is("ul, ol");
+        // #region agent log - Hypothesis C: Log each sibling element
+        if (siblingCount <= 5) console.log('[DEBUG-C2] Sibling element:', { siblingCount, tagName, isUlOl, textPreview: next.text().substring(0, 50) });
+        // #endregion
+        
+        // Check for lists (direct or nested)
         if (next.is("ul, ol")) {
           next.find("li").each((_, li) => {
             const itemText = $(li).text().trim();
-            if (itemText && itemText.length < 200) {
+            if (itemText && isValidGearItemLength(itemText) && isLikelyGearItem(itemText) && !workspaceItems.includes(itemText)) {
               workspaceItems.push(itemText);
             }
           });
         }
-        // Also check for list items marked with * in markdown-style content
-        if (next.is("p") || next.is("div")) {
+        
+        // Also search inside divs for nested lists
+        if (next.is("div")) {
+          next.find("ul li, ol li").each((_, li) => {
+            const itemText = $(li).text().trim();
+            if (itemText && isValidGearItemLength(itemText) && isLikelyGearItem(itemText) && !workspaceItems.includes(itemText)) {
+              workspaceItems.push(itemText);
+            }
+          });
+        }
+        
+        // Enhanced bullet point extraction in paragraphs and divs
+        if (next.is("p") || next.is("div") || next.is("span")) {
           const text = next.text().trim();
-          if (text.startsWith("*") || text.startsWith("•") || text.startsWith("-")) {
-            const item = text.replace(/^[*•-]\s*/, "").trim();
-            if (item && item.length < 200) {
+          
+          // Single-line bullet items
+          if (text && (text.startsWith("•") || text.startsWith("*") || text.startsWith("-") || text.startsWith("◦"))) {
+            const item = text.replace(/^[*•\-◦]\s*/, "").trim();
+            if (item && isValidGearItemLength(item) && isLikelyGearItem(item) && !workspaceItems.includes(item)) {
               workspaceItems.push(item);
             }
           }
+          
+          // Multi-line bullet lists (markdown-style)
+          const lines = text.split(/\n/);
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine && (trimmedLine.startsWith("•") || trimmedLine.startsWith("*") || trimmedLine.startsWith("-") || trimmedLine.startsWith("◦"))) {
+              const item = trimmedLine.replace(/^[*•\-◦]\s*/, "").trim();
+              if (item && isValidGearItemLength(item) && isLikelyGearItem(item) && !workspaceItems.includes(item)) {
+                workspaceItems.push(item);
+              }
+            }
+          }
         }
+        
         next = next.next();
       }
+      // #region agent log - Hypothesis C: After sibling loop
+      console.log('[DEBUG-C3] After sibling traversal:', { siblingCount, itemsFound: workspaceItems.length });
+      // #endregion
     }
   });
 
-  // Also look for bullet points that might be workspace items
+  // #region agent log - Hypothesis A/B: Items after heading extraction
+  console.log('[DEBUG-A3] After heading extraction:', { itemCount: workspaceItems.length, items: workspaceItems });
+  // #endregion
+
+  // Enhanced fallback: Look for gear items in lists and other elements
   if (workspaceItems.length === 0) {
+    // #region agent log - Hypothesis B: Fallback triggered
+    console.log('[DEBUG-B2] Fallback keyword extraction triggered');
+    // #endregion
+    
+    // Process list items
     $("li").each((_, li) => {
       const text = $(li).text().trim();
-      // Filter for items that look like gear/equipment
-      if (
-        text.length > 3 &&
-        text.length < 200 &&
-        !text.includes("→") && // Not a link
-        !text.toLowerCase().includes("subscribe") &&
-        !text.toLowerCase().includes("newsletter")
-      ) {
-        // Check if it looks like a product/gear item
-        const gearKeywords = ["desk", "chair", "monitor", "keyboard", "mouse", "mac", "laptop", "display", "light", "camera", "microphone", "headphone", "speaker"];
-        const isGear = gearKeywords.some((keyword) =>
-          text.toLowerCase().includes(keyword)
-        );
-        if (isGear && !workspaceItems.includes(text)) {
+      if (isValidGearItemLength(text) && isLikelyGearItem(text) && !workspaceItems.includes(text)) {
+        workspaceItems.push(text);
+      }
+    });
+    
+    // Process paragraph elements with bullet points
+    $("p").each((_, p) => {
+      const text = $(p).text().trim();
+      
+      // Single-line bullet items
+      if (text && (text.startsWith("•") || text.startsWith("*") || text.startsWith("-") || text.startsWith("◦"))) {
+        const item = text.replace(/^[*•\-◦]\s*/, "").trim();
+        if (item && isValidGearItemLength(item) && isLikelyGearItem(item) && !workspaceItems.includes(item)) {
+          workspaceItems.push(item);
+        }
+      }
+      
+      // Multi-line bullet lists
+      const lines = text.split(/\n/);
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (trimmedLine && (trimmedLine.startsWith("•") || trimmedLine.startsWith("*") || trimmedLine.startsWith("-") || trimmedLine.startsWith("◦"))) {
+          const item = trimmedLine.replace(/^[*•\-◦]\s*/, "").trim();
+          if (item && isValidGearItemLength(item) && isLikelyGearItem(item) && !workspaceItems.includes(item)) {
+            workspaceItems.push(item);
+          }
+        }
+      }
+    });
+    
+    // Process div elements with bullet points
+    $("div").each((_, div) => {
+      const text = $(div).text().trim();
+      
+      // Single-line bullet items (but not if it's a container with nested content)
+      if (text && text.length < 200 && (text.startsWith("•") || text.startsWith("*") || text.startsWith("-") || text.startsWith("◦"))) {
+        const item = text.replace(/^[*•\-◦]\s*/, "").trim();
+        if (item && isValidGearItemLength(item) && isLikelyGearItem(item) && !workspaceItems.includes(item)) {
+          workspaceItems.push(item);
+        }
+      }
+      
+      // Multi-line bullet lists
+      const lines = text.split(/\n/);
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (trimmedLine && (trimmedLine.startsWith("•") || trimmedLine.startsWith("*") || trimmedLine.startsWith("-") || trimmedLine.startsWith("◦"))) {
+          const item = trimmedLine.replace(/^[*•\-◦]\s*/, "").trim();
+          if (item && isValidGearItemLength(item) && isLikelyGearItem(item) && !workspaceItems.includes(item)) {
+            workspaceItems.push(item);
+          }
+        }
+      }
+    });
+    
+    // Process span elements (often used for inline gear items)
+    $("span").each((_, span) => {
+      const text = $(span).text().trim();
+      // Only process if it's a standalone span (not nested in lists/paragraphs we've already processed)
+      const parentTag = $(span).parent().prop('tagName');
+      if (parentTag !== 'LI' && parentTag !== 'P' && parentTag !== 'DIV') {
+        if (text && isValidGearItemLength(text) && isLikelyGearItem(text) && !workspaceItems.includes(text)) {
+          workspaceItems.push(text);
+        }
+      }
+    });
+    
+    // Process strong/bold tags that might be gear item labels
+    $("strong, b").each((_, el) => {
+      const text = $(el).text().trim();
+      // Only if it's not already in a list item we processed
+      const $parent = $(el).parent();
+      if (!$parent.is('li')) {
+        if (text && isValidGearItemLength(text) && isLikelyGearItem(text) && !workspaceItems.includes(text)) {
           workspaceItems.push(text);
         }
       }
     });
   }
+  
+  // #region agent log - Final workspace items
+  console.log('[DEBUG-FINAL] Final workspace items:', { count: workspaceItems.length, items: workspaceItems });
+  // #endregion
+  
+  // #region agent log - Hypothesis C/E: Check for alternative item structures
+  const divWithBullets: string[] = [];
+  $("div").each((_, div) => {
+    const text = $(div).text().trim();
+    if ((text.startsWith("•") || text.startsWith("*") || text.startsWith("-")) && text.length < 150) {
+      divWithBullets.push(text.substring(0, 80));
+    }
+  });
+  const strongTags: string[] = [];
+  $("strong, b").each((_, el) => {
+    const text = $(el).text().trim();
+    if (text.length > 5 && text.length < 80) strongTags.push(text);
+  });
+  console.log('[DEBUG-E] Alternative structures:', { divBulletCount: divWithBullets.length, divBullets: divWithBullets.slice(0, 10), strongCount: strongTags.length, strongSamples: strongTags.slice(0, 15) });
+  // #endregion
 
   // Extract images - filter out logos using URL patterns and HTML position
   const images: string[] = [];
